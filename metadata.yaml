@@ -1,0 +1,10 @@
+name: lets-encrypt-nginx
+summary: Sets up lets-encrypt for a public endpoint
+maintainer: sander <sander.borny@ugent.be>
+description: |
+  Sets up lets-encrypt for a public endpoint
+tags:
+  - misc
+requires:
+  reverseproxy:
+    interface: http

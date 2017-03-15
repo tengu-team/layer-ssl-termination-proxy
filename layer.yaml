@@ -1,0 +1,4 @@
+options:
+  lets-encrypt:
+    service-name: nginx
+includes: ['layer:basic', 'layer:nginx', 'layer:lets-encrypt', 'interface:http']
