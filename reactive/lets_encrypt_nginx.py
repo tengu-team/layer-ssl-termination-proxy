@@ -3,7 +3,8 @@ from charmhelpers.core import hookenv, host
 from charms.layer.nginx import configure_site
 from charmhelpers.core.hookenv import status_set, charm_dir
 from charmhelpers.contrib.python.packages import pip_install
-from charms.layer import lets_encrypt
+from charms.layer import lets_encrypt, lets_encrypt_nginx
+
 
 config = hookenv.config()
 
@@ -26,7 +27,7 @@ def set_up(reverseproxy):
                                                   , crt_path=live['fullchain']
                                                   , fqdn=config['fqdn']
                                                   , hostname=services[0][hosts][0]['hostname'])
-    call(['python3', charm_dir() + '/files/create-crontab.py'])
+    lets_encrypt_nginx.create_crontab()
     status_set('active', 'Ready')
     set_state('lets-encrypt-nginx.running')
 
@@ -36,5 +37,5 @@ def stop_nginx():
     hookenv.log('Reverseproxy relation broken')
     if host.service_running('nginx'):
         host.service_stop('nginx')
-    call(['python3', charm_dir() + '/files/delete-crontab.py'])
+    lets_encrypt_nginx.delete_crontab()
     remove_state('lets-encrypt-nginx.running')
