@@ -11,10 +11,10 @@ config = hookenv.config()
 
 @when_not('lets-encrypt-nginx.installed')
 def install():
-	pkgs = ['python-crontab']
-	for pkg in pkgs:
-		pip_install(pkg)
-	set_state('lets-encrypt-nginx.installed')
+    pkgs = ['python-crontab']
+    for pkg in pkgs:
+        pip_install(pkg)
+    set_state('lets-encrypt-nginx.installed')
 
 @when('reverseproxy.available', 'nginx.available', 'lets-encrypt.registered')
 @when_not('lets-encrypt-nginx.running')
