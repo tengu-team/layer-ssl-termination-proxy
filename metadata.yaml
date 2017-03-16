@@ -8,3 +8,4 @@ tags:
 requires:
   reverseproxy:
     interface: http
+series: ['xenial']

@@ -1,0 +1,5 @@
+options:
+  credentials:
+    type: string
+    default: ""
+    description: "Space separated username and password for basic authentication."
