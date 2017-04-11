@@ -1,17 +1,13 @@
-name: lets-encrypt-nginx
-summary: Sets up lets-encrypt for a public endpoint
+name: ssl-termination-proxy
+summary: An ssl/tls termination proxy based on NGINX + lets-encrypt.
 maintainer: sander <sander.borny@ugent.be>
 description: |
-  Sets up lets-encrypt for a public endpoint
+  You put this Charm in front of an `http` webservice to add `https` security. It deploys a TLS/SSL/HTTPS termination proxy. All https traffic going to this server will be sent to the webserver as `http` traffic.
 tags:
-  - misc
+  - cache-proxy
+  - security
+  - web_server
 requires:
   reverseproxy:
     interface: http
-resources:
-    dhparam:
-        type: file
-        filename: dhparam.pem
-        description: |
-            url https://wiki.openssl.org/index.php/Diffie_Hellman
 series: ['xenial']

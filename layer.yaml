@@ -2,4 +2,4 @@ options:
   lets-encrypt:
     service-name: nginx
 includes: ['layer:basic', 'layer:nginx', 'layer:lets-encrypt', 'interface:http']
-repo: git@github.com:tengu-team/layer-lets-encrypt-nginx.git
+repo: git@github.com:tengu-team/layer-ssl-termination-proxy.git
