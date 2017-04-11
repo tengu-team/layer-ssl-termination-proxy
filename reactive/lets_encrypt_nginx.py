@@ -1,4 +1,20 @@
+# !/usr/bin/env python3
+# Copyright (C) 2017  Ghent University
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
 import os
+import shutil
 import charms.apt
 from charms.reactive import when, when_not, set_state, remove_state
 from charmhelpers.core import hookenv, host
@@ -8,17 +24,27 @@ from charmhelpers.contrib.python.packages import pip_install
 from charms.layer import lets_encrypt
 from subprocess import call
 
+
 config = hookenv.config()
+dhparam_dir = os.path.join(os.sep, 'etc', 'nginx', 'dhparam')
+dhparam = 'dhparam.pem'
+
 
 @when_not('apt.installed.apache2-utils')
 def install_utils():
     charms.apt.queue_install(['apache2-utils'])
     charms.apt.install_queued()
 
+
 @when('apt.installed.apache2-utils')
 @when_not('lets-encrypt-nginx.installed')
 def install():
+    if not os.path.isdir(dhparam_dir):
+        os.mkdir(dhparam_dir)
+    shutil.copyfile(os.path.join(charm_dir(), 'files', dhparam),
+                    os.path.join(dhparam_dir, dhparam))
     set_state('lets-encrypt-nginx.installed')
+
 
 @when('reverseproxy.available', 'nginx.available', 'lets-encrypt.registered', 'lets-encrypt-nginx.installed')
 @when_not('lets-encrypt-nginx.running')
@@ -33,9 +59,11 @@ def set_up(reverseproxy):
     configure_site('default', template, privkey=live['privkey']
                                                   , fullchain=live['fullchain']
                                                   , fqdn=config['fqdn']
-                                                  , hostname=services[0]['hosts'][0]['hostname'])
+                                                  , hostname=services[0]['hosts'][0]['hostname']
+                                                  , dhparam=os.path.join(dhparam_dir, dhparam))
     status_set('active', 'Ready')
     set_state('lets-encrypt-nginx.running')
+
 
 @when('lets-encrypt-nginx.running')
 @when_not('reverseproxy.available')
@@ -44,6 +72,7 @@ def stop_nginx():
     if host.service_running('nginx'):
         host.service_stop('nginx')
     remove_state('lets-encrypt-nginx.running')
+
 
 @when('config.changed.credentials', 'lets-encrypt-nginx.installed')
 def config_changed_credentials():

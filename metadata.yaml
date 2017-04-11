@@ -8,4 +8,10 @@ tags:
 requires:
   reverseproxy:
     interface: http
+resources:
+    dhparam:
+        type: file
+        filename: dhparam.pem
+        description: |
+            url https://wiki.openssl.org/index.php/Diffie_Hellman
 series: ['xenial']
