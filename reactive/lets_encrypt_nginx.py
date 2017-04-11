@@ -26,6 +26,8 @@ from subprocess import call
 
 
 config = hookenv.config()
+dhparam_dir = os.path.join(os.sep, 'etc', 'nginx', 'dhparam')
+dhparam = 'dhparam.pem'
 
 
 @when_not('apt.installed.apache2-utils')
@@ -37,9 +39,10 @@ def install_utils():
 @when('apt.installed.apache2-utils')
 @when_not('lets-encrypt-nginx.installed')
 def install():
-    if not os.path.isdir(config['dhparam'].rsplit('/',1)[0]):
-        os.mkdir(config['dhparam'].rsplit('/',1)[0])
-    shutil.copyfile(hookenv.resource_get('dhparam') ,config['dhparam'])
+    if not os.path.isdir(dhparam_dir):
+        os.mkdir(dhparam_dir)
+    shutil.copyfile(os.path.join(charm_dir(), 'files', dhparam),
+                    os.path.join(dhparam_dir, dhparam))
     set_state('lets-encrypt-nginx.installed')
 
 
@@ -57,7 +60,7 @@ def set_up(reverseproxy):
                                                   , fullchain=live['fullchain']
                                                   , fqdn=config['fqdn']
                                                   , hostname=services[0]['hosts'][0]['hostname']
-                                                  , dhparam=config['dhparam'])
+                                                  , dhparam=os.path.join(dhparam_dir, dhparam))
     status_set('active', 'Ready')
     set_state('lets-encrypt-nginx.running')
 

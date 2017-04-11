@@ -2,8 +2,4 @@ options:
   credentials:
     type: string
     default: ""
-    description: "Space separated username and password for basic authentication."
-  dhparam:
-    type: string
-    default: "/etc/nginx/dhparam/dhparam.pem"
-    description: "Location and filename where the dhparam file will be stored."  
+    description: "Space separated username and password for basic authentication."  
