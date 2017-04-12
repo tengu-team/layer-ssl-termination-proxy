@@ -5,7 +5,8 @@ This charm provides a reverse proxy with installed certificates via the http int
 # DHParameters
 
 This charm installs its own pregenerated dhparam.pem file. It was generated using openssl using the following command:
-```sudo openssl dhparam -out dhparam.pem 4096
+```
+sudo openssl dhparam -out dhparam.pem 4096
 ```
 Currently a 4096 bit prime is used (recommended at time of writing), but as time goes by, this should be increased.
 
