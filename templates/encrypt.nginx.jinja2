@@ -21,11 +21,9 @@ server {
     ssl_stapling on;  ## https://tools.ietf.org/html/rfc4366#section-3.6
     ssl_stapling_verify on;
     add_header Strict-Transport-Security max-age=63072000;  ## Force HTTPS, helps to protect websites against protocol downgrade attacks and cookie hijacking
-    add_header X-Frame-Options DENY;  ## Prevents rendering inside a frame
-    add_header X-Content-Type-Options nosniff;  ## Sending the new X-Content-Type-Options response header with the value nosniff will prevent a browser from MIME-sniffing a response away from the declared content-type.
 
     location / {
-        proxy_pass http://{{hostname}};
+        proxy_pass http://{{hostname}}:{{port}};
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

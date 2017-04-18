@@ -28,7 +28,9 @@ juju add-relation flask-helloworld ssl-termination-proxy
 
 **[Optional] Configure basic auth**
 
+```bash
 juju config credentials="<username> <password>"
+```
 
 *Multiple accounts aren't supported for the moment.*
 

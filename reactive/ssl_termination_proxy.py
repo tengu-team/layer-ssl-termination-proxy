@@ -14,11 +14,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 import os
-import shutil
 from subprocess import call
 
 from charmhelpers.core import hookenv
-from charmhelpers.core.hookenv import status_set, charm_dir
+from charmhelpers.core.hookenv import status_set
 
 from charms.reactive import when, when_not, set_state, remove_state
 
@@ -27,8 +26,6 @@ from charms.layer.nginx import configure_site  # pylint:disable=E0611,E0401
 
 
 config = hookenv.config()
-dhparam_dir = os.path.join(os.sep, 'etc', 'nginx', 'dhparam')
-dhparam = 'dhparam.pem'
 
 
 @when(
@@ -36,10 +33,6 @@ dhparam = 'dhparam.pem'
 @when_not(
     'ssl-termination-proxy.installed')
 def install():
-    if not os.path.isdir(dhparam_dir):
-        os.mkdir(dhparam_dir)
-    shutil.copyfile(os.path.join(charm_dir(), 'files', dhparam),
-                    os.path.join(dhparam_dir, dhparam))
     set_state('ssl-termination-proxy.installed')
 
 
@@ -99,7 +92,8 @@ def set_up(reverseproxy):
         fullchain=live['fullchain'],
         fqdn=config['fqdn'].rstrip(),
         hostname=services[0]['hosts'][0]['hostname'],
-        dhparam=os.path.join(dhparam_dir, dhparam),
+        port=services[0]['hosts'][0]['port'],
+        dhparam=live['dhparam'],
         auth_basic=bool(config['credentials']))
     set_state('ssl-termination-proxy.running')
     status_set('active', 'Ready (https://{})'.format(config['fqdn'].rstrip()))
