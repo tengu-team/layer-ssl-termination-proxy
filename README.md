@@ -38,16 +38,10 @@ juju config ssl-termination-proxy credentials="<username> <password>"
 
 *Multiple accounts aren't supported for the moment.*
 
-# DHParameters
-
-This charm installs its own pregenerated dhparam.pem file. It was generated using openssl using the following command:
-```
-sudo openssl dhparam -out dhparam.pem 4096
-```
-Currently a 4096 bit prime is used (recommended at time of writing), but as time goes by, this should be increased.
-
 ## Authors
 
 This software was created in the [IBCN research group](https://www.ibcn.intec.ugent.be/) of [Ghent University](https://www.ugent.be/en) in Belgium. This software is used in [Tengu](https://tengu.intec.ugent.be), a project that aims to make experimenting with data frameworks and tools as easy as possible.
 
  - Sander Borny <sander.borny@ugent.be>
+ - Merlijn Sebrechts <merlijn.sebrechts@gmail.com>
+ - Mathijs Moerman <mathijs.moerman@qrama.io>
