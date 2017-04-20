@@ -20,7 +20,7 @@ server {
     ssl_session_tickets off;  ## https://github.com/mozilla/server-side-tls/issues/135
     ssl_stapling on;  ## https://tools.ietf.org/html/rfc4366#section-3.6
     ssl_stapling_verify on;
-    add_header Strict-Transport-Security max-age=63072000;  ## Force HTTPS, helps to protect websites against protocol downgrade attacks and cookie hijacking
+    add_header Strict-Transport-Security max-age=63072000 always;  ## Force HTTPS, helps to protect websites against protocol downgrade attacks and cookie hijacking
 
     location / {
         proxy_pass http://{{hostname}}:{{port}};

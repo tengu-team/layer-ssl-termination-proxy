@@ -1,10 +1,14 @@
 # SSL Termination Proxy
 
-This charm provides a reverse proxy with installed certificates via the http interface. This proxy is using NGINX and a let's encrypt certificate.
+This charm installs an [HTTPS reverse proxy](https://en.wikipedia.org/wiki/TLS_termination_proxy). The proxy secures traffic to a webservice in the private network using a Let's Encrypt HTTPS certificate. The proxy can also add basic username/password authentication if the `credentials` config option is set.
+
+<img src="https://raw.githubusercontent.com/tengu-team/layer-ssl-termination-proxy/master/docs/ssl-termination-proxy.png">
+
+This proxy receives an A+ rating on the [Qualis SSL Server Test](https://www.ssllabs.com/ssltest/index.html).
 
 # How to use
 
-**Basic HTTPS proxy**
+**HTTPS proxy**
 
 ```bash
 # Deploy your http webservice.
