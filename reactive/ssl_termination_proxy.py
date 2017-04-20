@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 import os
-from subprocess import call
+from subprocess import check_call
 
 from charmhelpers.core import hookenv
 from charmhelpers.core.hookenv import status_set
@@ -54,24 +54,17 @@ def signal_need_fqdn():
 def signal_need_webservice():
     status_set(
         'blocked',
-        'Please relate an HTTP webservice (registered https://{})'.format(config['fqdn']))
+        'Please relate an HTTP webservice (registered {})'.format(config['fqdn']))
 
 
 @when(
-    'ssl-termination-proxy.installed'
+    'ssl-termination-proxy.running',
     'config.changed.credentials')
 def configure_basic_auth():
-    print('Config changed credentials')
-    if config['credentials']:
-        credentials = config['credentials'].split(' ')
-        if not os.path.exists('/etc/nginx/.htpasswd'):
-            call(['htpasswd', '-c', '-b', '/etc/nginx/.htpasswd', credentials[0], credentials[1]])
-        else:
-            call(['htpasswd', '-b', '/etc/nginx/.htpasswd', credentials[0], credentials[1]])
-    else:
-        if os.path.exists('/etc/nginx/.htpasswd'):
-            os.remove('/etc/nginx/.htpasswd')
+    print('Credentials changed, re-triggering setup.')
     remove_state('ssl-termination-proxy.running')
+    # To make sure we don't trigger an infinite loop.
+    remove_state('config.changed.credentials')
 
 
 @when(
@@ -81,9 +74,26 @@ def configure_basic_auth():
 @when_not(
     'ssl-termination-proxy.running')
 def set_up(reverseproxy):
-    print('Http relation found')
+    print('Http relation found, configuring proxy.')
+    credentials = config.get('credentials', '').split()
+    # Did we get a valid value? If not, blocked!
+    if len(credentials) not in (0, 2):
+        status_set(
+            'blocked',
+            'authentication config wrong! '
+            'I expect 2 space-separated strings. I got {}.'.format(len(credentials)))
+        return
+    # We got a valid value, signal to regenerate config.
+    try:
+        os.remove('/etc/nginx/.htpasswd')
+    except OSError:
+        pass
+    # Did we get credentials? If so, configure them.
+    if len(credentials) == 2:
+        check_call([
+            'htpasswd', '-c', '-b', '/etc/nginx/.htpasswd',
+            credentials[0], credentials[1]])
     services = reverseproxy.services()
-    print(services)
     live = lets_encrypt.live()
     template = 'encrypt.nginx.jinja2'
     configure_site(
