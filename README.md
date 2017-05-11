@@ -38,6 +38,10 @@ juju config ssl-termination-proxy credentials="<username> <password>"
 
 *Multiple accounts aren't supported for the moment.*
 
+*Note: Authentication is turned off for `OPTIONS` requests because this is required for CORS. As part of CORS preflight, `OPTIONS` will get called without authentication headers. If this call fails (with 401 unauthorized), the actual CORS call will not be initiated.*
+
+
+
 ## Authors
 
 This software was created in the [IBCN research group](https://www.ibcn.intec.ugent.be/) of [Ghent University](https://www.ugent.be/en) in Belgium. This software is used in [Tengu](https://tengu.intec.ugent.be), a project that aims to make experimenting with data frameworks and tools as easy as possible.
