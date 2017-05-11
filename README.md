@@ -30,6 +30,9 @@ juju add-relation jenkins ssl-termination-proxy
 # Now you can surf to https://<proxy-public-ip> and you wil reach the webservice.
 ```
 
+***OpenStack environments***
+If you're using an OpenStack private cloud which uses floating IP addresses, you'll need to associate a floating IP address with the ssl-termination-proxy unit before setting the FQDN, and ensure that this FQDN is reachable from the public Internet.  This is necessary for the Let's Encrypt registration to complete.
+
 **[Optional] Configure basic auth**
 
 ```bash
