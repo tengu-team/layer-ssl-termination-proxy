@@ -7,7 +7,7 @@ tags:
   - cache-proxy
   - security
   - web_server
-provides:
-  ssltermination:
-    interface: ssl-termination
+requires:
+  reverseproxy:
+    interface: http
 series: ['xenial']
