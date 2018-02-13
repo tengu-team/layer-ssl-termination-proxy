@@ -13,69 +13,151 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 import os
-from subprocess import check_call
+from shutil import rmtree
+from subprocess import check_call, run, CalledProcessError
 
-from charmhelpers.core import hookenv
-from charmhelpers.core.hookenv import status_set
+from charms.reactive import set_flag, clear_flag, when_not, when, when_any
+from charms.reactive.relations import endpoint_from_flag
+from charms.reactive.helpers import data_changed
 
-from charms.reactive import when, when_not, set_state, remove_state
+from charmhelpers.core.hookenv import status_set, log, config
+from charmhelpers.core import templating, unitdata
 
-from charms.layer import lets_encrypt  # pylint:disable=E0611,E0401
-from charms.layer.nginx import configure_site  # pylint:disable=E0611,E0401
+from charms.layer import lets_encrypt
 
 
-config = hookenv.config()
+config = config()
 
+
+########################################################################
+# Install
+########################################################################
+
+@when('apt.installed.apache2-utils', 'nginx.available')
+@when_not('ssl-termination.installed')
+def install_ssl_termination():
+    os.makedirs('/etc/nginx/sites-available/ssl-termination', exist_ok=True)
+    os.makedirs('/etc/nginx/sites-available/http', exist_ok=True)
+    status_set('active', 'ready')
+    set_flag('ssl-termination.installed')
+
+
+########################################################################
+# SSL-termination interface
+########################################################################
+
+@when('ssl-termination.installed')
+@when_any('endpoint.ssl-termination.update')
+def get_certificate_requests():
+    endpoint = endpoint_from_flag('endpoint.ssl-termination.available')
+    clear_flag('endpoint.ssl-termination.update')
+    cert_requests = endpoint.get_cert_requests()
+    if data_changed('sslterm.requests', cert_requests) and cert_requests:
+        old_requests = unitdata.kv().get('sslterm.cert-requests', [])
+        delete_old_certs(old_requests, cert_requests)
+        unitdata.kv().set('sslterm.cert-requests', cert_requests)
+        lets_encrypt.set_requested_certificates(cert_requests)
+    clean_nginx('/etc/nginx/sites-available/ssl-termination')
+    set_flag('ssl-termination.waiting')
+
+
+@when('ssl-termination.waiting',
+      'lets-encrypt.registered', 
+      'endpoint.ssl-termination.available')
+def configure_nginx():
+    clear_flag('ssl-termination.waiting')
+    endpoint = endpoint_from_flag('endpoint.ssl-termination.available')
+    certs = lets_encrypt.live_all()
+    cert_requests = endpoint.get_cert_requests() 
+    # Find the correct fqdn / certificate info
+    for request in cert_requests:
+        for fqdn in request['fqdn']:
+            if fqdn in certs:
+                correct_fqdn = fqdn
+        juju_unit_name = request['juju_unit'].split('/')[0]
+        abs_file_path = '/etc/nginx/sites-available/ssl-termination/' + juju_unit_name
+        create_nginx_config(abs_file_path,
+                            request['fqdn'],
+                            request['upstreams'],
+                            juju_unit_name,
+                            certs[correct_fqdn],
+                            request['credentials'],
+                            'htaccess_' + juju_unit_name)    
+    update_nginx()
+    endpoint.send_status(list(certs.keys()))
+
+
+########################################################################
+# HTTP interface
+########################################################################
 
 @when(
-    'apt.installed.apache2-utils')
-@when_not(
-    'ssl-termination-proxy.installed')
-def install():
-    set_state('ssl-termination-proxy.installed')
-
-
-@when(
-    'ssl-termination-proxy.installed')
-@when_not(
-    'lets-encrypt.registered')
-def signal_need_fqdn():
-    # This check is here to make sure we don't overwrite the "register cert failed" message
-    if not config['fqdn']:
-        status_set('blocked', 'Please fill in fqdn for ssl certificate.')
-
-
-@when(
-    'ssl-termination-proxy.installed',
-    'lets-encrypt.registered')
-@when_not(
-    'reverseproxy.available')
-def signal_need_webservice():
-    status_set(
-        'blocked',
-        'Please relate an HTTP webservice (registered {})'.format(config['fqdn']))
-
-
-@when(
-    'ssl-termination-proxy.running',
-    'config.changed.credentials')
-def configure_basic_auth():
-    print('Credentials changed, re-triggering setup.')
-    remove_state('ssl-termination-proxy.running')
-    # To make sure we don't trigger an infinite loop.
-    remove_state('config.changed.credentials')
-
-
-@when(
-    'ssl-termination-proxy.installed',
+    'ssl-termination.installed',
     'lets-encrypt.registered',
     'reverseproxy.available')
+def set_up():
+    if not config.get('fqdn'):
+        return
+    reverseproxy = endpoint_from_flag('reverseproxy.available')
+    services = reverseproxy.services()
+    if not data_changed('sslterm.http', services) and \
+       not config.changed('credentials'):
+        return
+    print('New http relation found, configuring proxy.')
+    clean_nginx('/etc/nginx/sites-available/http')
+    cert = lets_encrypt.live()
+
+    upstreams = []
+    for service in services:
+        upstreams.extend(service['hosts'])
+
+    create_nginx_config("/etc/nginx/sites-available/http/http-config",
+                        [config.get("fqdn")],
+                        upstreams,
+                        "http-upstream",
+                        cert,
+                        config.get("credentials", ""),
+                        "htaccess_http")    
+    update_nginx()
+    set_flag('ssl-termination-http.setup')
+    status_set('active', 'Ready')
+
+
+@when(
+    'ssl-termination.installed',
+    'ssl-termination-http.setup'
+)
 @when_not(
-    'ssl-termination-proxy.running')
-def set_up(reverseproxy):
-    print('Http relation found, configuring proxy.')
-    credentials = config.get('credentials', '').split()
+    'reverseproxy.available'
+)
+def remove_http_setup():
+    data_changed('sslterm.http', [])
+    clean_nginx('/etc/nginx/sites-available/http')
+    update_nginx()
+    clear_flag('ssl-termination-http.setup')
+
+
+########################################################################
+# Helper methods
+########################################################################
+
+def delete_old_certs(old_requests, new_requests):
+    if not old_requests:
+        return
+    for request in new_requests:
+        if request not in old_requests:
+            for fqdn in request['fqdn']:   
+                if os.path.exists('/etc/letsencrypt/live/' + fqdn):
+                    rmtree('/etc/letsencrypt/live/' + fqdn)
+                    rmtree('/etc/letsencrypt/archive/' + fqdn)
+                    os.remove('/etc/letsencrypt/renewal/' + fqdn + '.conf')
+
+
+def create_nginx_config(abs_path, fqdn, upstreams, upstream_name, cert, credentials, htaccess_name):
+    # fqdn has to be a list
+    credentials = credentials.split()
     # Did we get a valid value? If not, blocked!
     if len(credentials) not in (0, 2):
         status_set(
@@ -85,34 +167,63 @@ def set_up(reverseproxy):
         return
     # We got a valid value, signal to regenerate config.
     try:
-        os.remove('/etc/nginx/.htpasswd')
+        os.remove('/etc/nginx/.' + htaccess_name)
     except OSError:
         pass
+
+    nginx_context = {
+        'privkey': cert['privkey'],
+        'fullchain': cert['fullchain'],
+        'fqdn': " ".join(fqdn),
+        'upstreams': upstreams,
+        'upstream_name': upstream_name,
+        'dhparam': cert['dhparam'],
+        'auth_basic': bool(credentials),
+    }
+
     # Did we get credentials? If so, configure them.
     if len(credentials) == 2:
         check_call([
-            'htpasswd', '-c', '-b', '/etc/nginx/.htpasswd',
+            'htpasswd', '-c', '-b', '/etc/nginx/.' + htaccess_name,
             credentials[0], credentials[1]])
-    services = reverseproxy.services()
-    live = lets_encrypt.live()
-    template = 'encrypt.nginx.jinja2'
-    configure_site(
-        'default', template,
-        privkey=live['privkey'],
-        fullchain=live['fullchain'],
-        fqdn=config['fqdn'].rstrip(),
-        hostname=services[0]['hosts'][0]['hostname'],
-        port=services[0]['hosts'][0]['port'],
-        dhparam=live['dhparam'],
-        auth_basic=bool(config['credentials']))
-    set_state('ssl-termination-proxy.running')
-    status_set('active', 'Ready (https://{})'.format(config['fqdn'].rstrip()))
+        nginx_context['htpasswd'] = '/etc/nginx/.' + htaccess_name
+
+    templating.render(source="encrypt.nginx.jinja2",
+                      target=abs_path,
+                      context=nginx_context)
+    filename = abs_path.rstrip('/').split('/')[-1]
+    os.symlink(abs_path, "/etc/nginx/sites-enabled/" + filename)
 
 
-@when(
-    'ssl-termination-proxy.running')
-@when_not(
-    'reverseproxy.available')
-def stop_nginx():
-    print('Reverseproxy relation broken')
-    remove_state('ssl-termination-proxy.running')
+def clean_nginx(target):
+    files = []
+    for file in os.listdir(target):
+        files.append(file)
+    # Remove all symb links in /sites-enabled
+    for file in os.listdir('/etc/nginx/sites-enabled'):
+        if file in files:
+            os.unlink('/etc/nginx/sites-enabled/' + file)
+    # Remove all config files from /sites-available
+    for file in os.listdir(target):
+        os.remove(target.rstrip('/') + '/' + file)
+
+
+def update_nginx():
+    # Check if nginx config is valid
+    try:
+        cmd = run(['nginx', '-t'])
+        cmd.check_returncode()
+    except CalledProcessError as e:
+        log(e)
+        status_set('blocked', 'Invalid NGINX configuration')
+        return False
+    # Reload NGINX
+    try:
+        cmd = run(['nginx', '-s', 'reload'])
+        cmd.check_returncode()
+    except CalledProcessError as e:
+        log(e)
+        status_set('blocked', 'Error reloading NGINX')
+        return False
+    return True
+

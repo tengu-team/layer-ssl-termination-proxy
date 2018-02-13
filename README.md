@@ -1,3 +1,4 @@
+
 # SSL Termination Proxy
 
 This charm installs an [HTTPS reverse proxy](https://en.wikipedia.org/wiki/TLS_termination_proxy). The proxy secures traffic to a webservice in the private network using a Let's Encrypt HTTPS certificate. The proxy can also add basic username/password authentication if the `credentials` config option is set.
@@ -5,6 +6,21 @@ This charm installs an [HTTPS reverse proxy](https://en.wikipedia.org/wiki/TLS_t
 <img src="https://raw.githubusercontent.com/tengu-team/layer-ssl-termination-proxy/master/docs/ssl-termination-proxy.png">
 
 This proxy receives an A+ rating on the [Qualis SSL Server Test](https://www.ssllabs.com/ssltest/index.html).
+
+# Building the charm
+Clone all needed layers and interfaces locally.
+```bash
+CHARMS=PATH_TO_CHARMS
+cd $CHARMS/layers
+git clone https://github.com/tengu-team/layer-ssl-termination-proxy.git
+git clone https://github.com/tengu-team/layer-lets-encrypt.git
+cd $CHARMS/interfaces
+git clone https://github.com/tengu-team/interface-ssl-termination.git
+cd $CHARMS/layers/layer-ssl-termination-proxy
+charm build -s xenial
+cd $CHARMS/xenial
+juju deploy ./ssl-termination-proxy
+```
 
 # How to use
 
@@ -52,3 +68,4 @@ This software was created in the [IBCN research group](https://www.ibcn.intec.ug
  - Sander Borny <sander.borny@ugent.be>
  - Merlijn Sebrechts <merlijn.sebrechts@gmail.com>
  - Mathijs Moerman <mathijs.moerman@qrama.io>
+

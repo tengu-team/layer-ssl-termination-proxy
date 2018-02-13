@@ -1,13 +1,17 @@
 name: ssl-termination-proxy
 summary: An ssl/tls termination proxy based on NGINX + lets-encrypt.
-maintainer: sander <sander.borny@ugent.be>
+maintainer: Sander Borny <sander.borny@ugent.be>
 description: |
   You put this Charm in front of an `http` webservice to add `https` security. It deploys a TLS/SSL/HTTPS termination proxy. All https traffic going to this server will be sent to the webserver as `http` traffic.
 tags:
   - cache-proxy
   - security
   - web_server
+subordinate: false
 requires:
   reverseproxy:
     interface: http
+provides:
+  ssl-termination:
+    interface: ssl-termination
 series: ['xenial']
