@@ -41,6 +41,7 @@ def install_ssl_termination():
     os.makedirs('/etc/nginx/sites-available/ssl-termination', exist_ok=True)
     os.makedirs('/etc/nginx/sites-available/http', exist_ok=True)
     set_flag('ssl-termination.installed')
+    status_set('blocked', 'waiting for fqdn subordinates')
 
 
 ########################################################################
@@ -63,13 +64,13 @@ def get_certificate_requests():
 
 
 @when('ssl-termination.waiting',
-      'lets-encrypt.registered', 
+      'lets-encrypt.registered',
       'endpoint.ssl-termination.available')
 def configure_nginx():
     clear_flag('ssl-termination.waiting')
     endpoint = endpoint_from_flag('endpoint.ssl-termination.available')
     certs = lets_encrypt.live_all()
-    cert_requests = endpoint.get_cert_requests() 
+    cert_requests = endpoint.get_cert_requests()
     # Find the correct fqdn / certificate info
     for request in cert_requests:
         for fqdn in request['fqdn']:
@@ -83,7 +84,7 @@ def configure_nginx():
                             juju_unit_name,
                             certs[correct_fqdn],
                             request['credentials'],
-                            'htaccess_' + juju_unit_name)    
+                            'htaccess_' + juju_unit_name)
     update_nginx()
     endpoint.send_status(list(certs.keys()))
 
@@ -94,7 +95,7 @@ def status_update_registered_certs():
     cert_requests = unitdata.kv().get('sslterm.cert-requests', [])
     for cert_request in cert_requests:
         registered_fqdns.extend(cert_request['fqdn'])
-    if config.get('fqdn') != "":
+    if config.get('fqdn'):
         registered_fqdns.append(config.get('fqdn'))
     status_set('active', 'Ready ({})'.format(",".join(registered_fqdns)))
 
@@ -129,7 +130,7 @@ def set_up():
                         "http-upstream",
                         cert,
                         config.get("credentials", ""),
-                        "htaccess_http")    
+                        "htaccess_http")
     update_nginx()
     set_flag('ssl-termination-http.setup')
     status_set('active', 'Ready')
@@ -158,7 +159,7 @@ def delete_old_certs(old_requests, new_requests):
         return
     for request in new_requests:
         if request not in old_requests:
-            for fqdn in request['fqdn']:   
+            for fqdn in request['fqdn']:
                 if os.path.exists('/etc/letsencrypt/live/' + fqdn):
                     rmtree('/etc/letsencrypt/live/' + fqdn)
                     rmtree('/etc/letsencrypt/archive/' + fqdn)
