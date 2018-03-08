@@ -40,7 +40,6 @@ config = config()
 def install_ssl_termination():
     os.makedirs('/etc/nginx/sites-available/ssl-termination', exist_ok=True)
     os.makedirs('/etc/nginx/sites-available/http', exist_ok=True)
-    status_set('active', 'ready')
     set_flag('ssl-termination.installed')
 
 
@@ -87,6 +86,17 @@ def configure_nginx():
                             'htaccess_' + juju_unit_name)    
     update_nginx()
     endpoint.send_status(list(certs.keys()))
+
+
+@when('lets-encrypt.registered')
+def status_update_registered_certs():
+    registered_fqdns = []
+    cert_requests = unitdata.kv().get('sslterm.cert-requests', [])
+    for cert_request in cert_requests:
+        registered_fqdns.extend(cert_request['fqdn'])
+    if config.get('fqdn') != "":
+        registered_fqdns.append(config.get('fqdn'))
+    status_set('active', 'Ready ({})'.format(",".join(registered_fqdns)))
 
 
 ########################################################################
