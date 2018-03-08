@@ -96,12 +96,12 @@ def configure_nginx():
 @when(
     'ssl-termination.installed',
     'lets-encrypt.registered',
-    'reverseproxy.available')
+    'website.available')
 def set_up():
     if not config.get('fqdn'):
         return
-    reverseproxy = endpoint_from_flag('reverseproxy.available')
-    services = reverseproxy.services()
+    website = endpoint_from_flag('website.available')
+    services = website.services()
     if not data_changed('sslterm.http', services) and \
        not config.changed('credentials'):
         return
@@ -130,7 +130,7 @@ def set_up():
     'ssl-termination-http.setup'
 )
 @when_not(
-    'reverseproxy.available'
+    'website.available'
 )
 def remove_http_setup():
     data_changed('sslterm.http', [])

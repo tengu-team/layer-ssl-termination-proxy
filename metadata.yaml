@@ -9,7 +9,7 @@ tags:
   - web_server
 subordinate: false
 requires:
-  reverseproxy:
+  website:
     interface: http
 provides:
   ssl-termination:
