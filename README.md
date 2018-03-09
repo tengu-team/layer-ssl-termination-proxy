@@ -1,4 +1,3 @@
-
 # SSL Termination Proxy
 
 This charm installs an [HTTPS reverse proxy](https://en.wikipedia.org/wiki/TLS_termination_proxy). The proxy secures traffic to a webservice in the private network using a Let's Encrypt HTTPS certificate and routes requests to backend services based on hostname. The proxy can also add basic username/password authentication if the `credentials` config option is set.
@@ -16,7 +15,11 @@ domain names and sends traffic to two backend services.
 - Surfing to `https://blog.example.com` gives you the blog.
 
 The DNS of both domain names points to the same server: the reverse proxy,
-which routes requests based on which hostname the requests use.
+which routes requests based on which hostname the requests use. This is the result:
+
+<img src="https://raw.githubusercontent.com/tengu-team/layer-ssl-termination-proxy/master/docs/ssl-termination-proxy-example.jpg">
+
+This is how you get it:
 
 ```bash
 # Deploy the two backend http webservices.
@@ -64,11 +67,11 @@ watch -c juju status --color
 # - https://blog.example.com to reach the ghost blog instance
 ```
 
-### OpenStack environments***
+### OpenStack environments
 
 If you're using an OpenStack private cloud which uses floating IP addresses, you'll need to associate a floating IP address with the ssl-termination-proxy unit before setting the FQDN, and ensure that this FQDN is reachable from the public Internet. This is necessary for the Let's Encrypt registration to complete.
 
-### [Optional] Configure basic auth**
+### [Optional] Configure basic auth
 
 ```bash
 juju config jenkins-fqdn credentials="<username> <password>"
