@@ -40,13 +40,6 @@ config = config()
 def install_ssl_termination():
     os.makedirs('/etc/nginx/sites-available/ssl-termination', exist_ok=True)
     os.makedirs('/etc/nginx/sites-available/http', exist_ok=True)
-    os.makedirs('/etc/nginx/streams-available/tcp', exist_ok=True)
-    os.makedirs('/etc/nginx/streams-enabled', exist_ok=True)
-    # Append stream config block to /etc/nginx/nginx.conf
-    with open("/etc/nginx/nginx.conf", "a") as f:
-        f.writelines(['stream {\n',
-                      '\tinclude /etc/nginx/streams-enabled/*;\n',
-                      '}'])
     set_flag('ssl-termination.installed')
     status_set('blocked', 'waiting for fqdn subordinates')
 
