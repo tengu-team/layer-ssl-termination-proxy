@@ -40,6 +40,13 @@ config = config()
 def install_ssl_termination():
     os.makedirs('/etc/nginx/sites-available/ssl-termination', exist_ok=True)
     os.makedirs('/etc/nginx/sites-available/http', exist_ok=True)
+    os.makedirs('/etc/nginx/streams-available/tcp', exist_ok=True)
+    os.makedirs('/etc/nginx/streams-enabled', exist_ok=True)
+    # Append stream config block to /etc/nginx/nginx.conf
+    with open("/etc/nginx/nginx.conf", "a") as f:
+        f.writelines(['stream {\n',
+                      '\tinclude /etc/nginx/streams-enabled/*;\n',
+                      '}'])
     set_flag('ssl-termination.installed')
     status_set('blocked', 'waiting for fqdn subordinates')
 
@@ -48,10 +55,10 @@ def install_ssl_termination():
 # SSL-termination interface
 ########################################################################
 
-@when('ssl-termination.installed')
-@when_any('endpoint.ssl-termination.update')
+@when('ssl-termination.installed',
+      'endpoint.ssl-termination.update')
 def get_certificate_requests():
-    endpoint = endpoint_from_flag('endpoint.ssl-termination.available')
+    endpoint = endpoint_from_flag('endpoint.ssl-termination.update')
     clear_flag('endpoint.ssl-termination.update')
     cert_requests = endpoint.get_cert_requests()
     if data_changed('sslterm.requests', cert_requests) and cert_requests:
@@ -59,8 +66,9 @@ def get_certificate_requests():
         delete_old_certs(old_requests, cert_requests)
         unitdata.kv().set('sslterm.cert-requests', cert_requests)
         lets_encrypt.set_requested_certificates(cert_requests)
+        set_flag('ssl-termination.waiting')
     clean_nginx('/etc/nginx/sites-available/ssl-termination')
-    set_flag('ssl-termination.waiting')
+    
 
 
 @when('ssl-termination.waiting',
@@ -237,4 +245,3 @@ def update_nginx():
         status_set('blocked', 'Error reloading NGINX')
         return False
     return True
-
