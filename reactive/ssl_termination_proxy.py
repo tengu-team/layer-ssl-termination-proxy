@@ -18,14 +18,27 @@ import os
 from shutil import rmtree
 from subprocess import check_call, run, CalledProcessError
 
-from charms.reactive import set_flag, clear_flag, when_not, when, when_any
+from charms.reactive import (
+    set_flag,
+    clear_flag,
+    when_not,
+    when,
+    when_any,
+    is_flag_set,
+)
 from charms.reactive.relations import endpoint_from_flag
 from charms.reactive.helpers import data_changed
 
-from charmhelpers.core.hookenv import status_set, log, config
+from charmhelpers.core.hookenv import log, config
 from charmhelpers.core import templating, unitdata
 
+from charms.layer import status
 from charms.layer import lets_encrypt
+from charms.layer.nginx_config_helper import (
+    NginxConfig,
+    NginxConfigError,
+    NginxModule,
+)
 
 
 config = config()
@@ -35,20 +48,33 @@ config = config()
 # Install
 ########################################################################
 
-@when('apt.installed.apache2-utils', 'nginx.available')
+@when('apt.installed.apache2-utils',
+      'nginx.available',
+      'nginx-config.installed')
 @when_not('ssl-termination.installed')
 def install_ssl_termination():
     os.makedirs('/etc/nginx/sites-available/ssl-termination', exist_ok=True)
     os.makedirs('/etc/nginx/sites-available/http', exist_ok=True)
     set_flag('ssl-termination.installed')
-    status_set('blocked', 'waiting for fqdn subordinates')
+    status.blocked('Waiting for fqdn subordinates or http relation')
 
 
 ########################################################################
 # SSL-termination interface
 ########################################################################
 
-@when('ssl-termination.installed')
+@when('ssl-termination.installed',
+      'endpoint.ssl-termination.update')
+@when_not('endpoint.ssl-termination.joined')
+def no_ssl_term_relations():
+    clean_nginx('/etc/nginx/sites-available/ssl-termination')
+    NginxConfig().delete_all_config(NginxModule.STREAM)
+    unitdata.kv().set('sslterm.cert-requests', [])
+    clear_flag('endpoint.ssl-termination.update')
+    set_flag('ssl-termination.report')
+
+@when('ssl-termination.installed',
+      'endpoint.ssl-termination.joined')
 @when_any('endpoint.ssl-termination.update')
 def get_certificate_requests():
     endpoint = endpoint_from_flag('endpoint.ssl-termination.available')
@@ -59,8 +85,14 @@ def get_certificate_requests():
         delete_old_certs(old_requests, cert_requests)
         unitdata.kv().set('sslterm.cert-requests', cert_requests)
         lets_encrypt.set_requested_certificates(cert_requests)
-    clean_nginx('/etc/nginx/sites-available/ssl-termination')
-    set_flag('ssl-termination.waiting')
+        clean_nginx('/etc/nginx/sites-available/ssl-termination')
+        NginxConfig().delete_all_config(NginxModule.STREAM)
+        set_flag('ssl-termination.waiting')
+    elif not cert_requests:  # If no more cert_requests remove all configs
+        unitdata.kv().set('sslterm.cert-requests', [])
+        clean_nginx('/etc/nginx/sites-available/ssl-termination')
+        NginxConfig().delete_all_config(NginxModule.STREAM)
+        set_flag('ssl-termination.report')
 
 
 @when('ssl-termination.waiting',
@@ -77,27 +109,24 @@ def configure_nginx():
             if fqdn in certs:
                 correct_fqdn = fqdn
         juju_unit_name = request['juju_unit'].split('/')[0]
-        abs_file_path = '/etc/nginx/sites-available/ssl-termination/' + juju_unit_name
-        create_nginx_config(abs_file_path,
-                            request['fqdn'],
-                            request['upstreams'],
-                            juju_unit_name,
-                            certs[correct_fqdn],
-                            request['credentials'],
-                            'htaccess_' + juju_unit_name)
+        if 'upstreams' in request and request['upstreams']:
+            abs_file_path = '/etc/nginx/sites-available/ssl-termination/' + juju_unit_name
+            create_nginx_config(abs_file_path,
+                                request['fqdn'],
+                                request['upstreams'],
+                                juju_unit_name,
+                                certs[correct_fqdn],
+                                request['credentials'],
+                                'htaccess_' + juju_unit_name)
+        if 'tcp' in request and request['tcp']:
+            if not create_tcp_nginx_config(request['tcp'],
+                                           certs[correct_fqdn],
+                                           juju_unit_name):
+                return
     update_nginx()
     endpoint.send_status(list(certs.keys()))
+    set_flag('ssl-termination.report')
 
-
-@when('lets-encrypt.registered')
-def status_update_registered_certs():
-    registered_fqdns = []
-    cert_requests = unitdata.kv().get('sslterm.cert-requests', [])
-    for cert_request in cert_requests:
-        registered_fqdns.extend(cert_request['fqdn'])
-    if config.get('fqdn'):
-        registered_fqdns.append(config.get('fqdn'))
-    status_set('active', 'Ready ({})'.format(",".join(registered_fqdns)))
 
 
 ########################################################################
@@ -133,7 +162,7 @@ def set_up():
                         "htaccess_http")
     update_nginx()
     set_flag('ssl-termination-http.setup')
-    status_set('active', 'Ready')
+    set_flag('ssl-termination.report')
 
 
 @when(
@@ -148,7 +177,26 @@ def remove_http_setup():
     clean_nginx('/etc/nginx/sites-available/http')
     update_nginx()
     clear_flag('ssl-termination-http.setup')
+    set_flag('ssl-termination.report')
 
+
+########################################################################
+# JuJu status handlers
+########################################################################
+
+@when('ssl-termination.report')
+def report_ssl_status():
+    registered_fqdns = []  
+    cert_requests = unitdata.kv().get('sslterm.cert-requests', [])
+    for cert_request in cert_requests:
+        registered_fqdns.extend(cert_request['fqdn'])
+    if config.get('fqdn') and is_flag_set('reverseproxy.available'):
+        registered_fqdns.append(config.get('fqdn'))
+    if registered_fqdns:
+        status.active('Ready ({})'.format(",".join(registered_fqdns)))
+    else:
+        status.active('Ready')
+    clear_flag('ssl-termination.report')
 
 ########################################################################
 # Helper methods
@@ -171,10 +219,8 @@ def create_nginx_config(abs_path, fqdn, upstreams, upstream_name, cert, credenti
     credentials = credentials.split()
     # Did we get a valid value? If not, blocked!
     if len(credentials) not in (0, 2):
-        status_set(
-            'blocked',
-            'authentication config wrong! '
-            'I expect 2 space-separated strings. I got {}.'.format(len(credentials)))
+        status.blocked('authentication config wrong! ' 
+                       'I expect 2 space-separated string. I got {}.'.format(len(credentials)))
         return
     # We got a valid value, signal to regenerate config.
     try:
@@ -226,7 +272,7 @@ def update_nginx():
         cmd.check_returncode()
     except CalledProcessError as e:
         log(e)
-        status_set('blocked', 'Invalid NGINX configuration')
+        status.blocked('Invalid NGINX configuration')
         return False
     # Reload NGINX
     try:
@@ -234,7 +280,40 @@ def update_nginx():
         cmd.check_returncode()
     except CalledProcessError as e:
         log(e)
-        status_set('blocked', 'Error reloading NGINX')
+        status.blocked('Error reloading NGINX')
         return False
     return True
 
+
+def create_tcp_nginx_config(tcp_request, cert, juju_unit):
+    """
+    tcp_request: [{
+                    'port': xxxx,
+                    'hosts': ['x.x.x.x', 'x.x.x.x'],
+                  }]
+    """
+    nginxcfg = NginxConfig()
+    count = 0
+    try:
+        for tcp in tcp_request:
+            name = "{}-{}".format(juju_unit, count)
+            tcp_context = {
+                'port': tcp['port'],
+                'fullchain': cert['fullchain'],
+                'privkey': cert['privkey'],
+                'upstream_name': name,
+                'upstreams': tcp['hosts'],
+            }
+            count += 1
+            tcp_config = templating.render(source='streams.nginx.jinja2',
+                                        target=None,
+                                        context=tcp_context)
+            nginxcfg.write_config(NginxModule.STREAM, tcp_config, name)
+        nginxcfg.enable_all_config(NginxModule.STREAM) \
+                .validate_nginx() \
+                .reload_nginx()
+    except NginxConfigError as e:
+        log(e)
+        status.blocked('{}'.format(e))
+        return False
+    return True
