@@ -53,8 +53,11 @@ config = config()
       'nginx-config.installed')
 @when_not('ssl-termination.installed')
 def install_ssl_termination():
-    os.makedirs('/etc/nginx/sites-available/ssl-termination', exist_ok=True)
-    os.makedirs('/etc/nginx/sites-available/http', exist_ok=True)
+    nginxcfg = NginxConfig()
+    http_path = os.path.join(nginxcfg.http_available_path, 'http')
+    ssl_term_path = os.path.join(nginxcfg.http_available_path, 'ssl-termination')
+    os.makedirs(http_path, exist_ok=True)
+    os.makedirs(ssl_term_path, exist_ok=True)
     set_flag('ssl-termination.installed')
     status.blocked('Waiting for fqdn subordinates or http relation')
 
@@ -67,7 +70,7 @@ def install_ssl_termination():
       'endpoint.ssl-termination.update')
 @when_not('endpoint.ssl-termination.joined')
 def no_ssl_term_relations():
-    clean_nginx('/etc/nginx/sites-available/ssl-termination')
+    NginxConfig().delete_all_config(NginxModule.HTTP, 'ssl-termination')
     NginxConfig().delete_all_config(NginxModule.STREAM)
     unitdata.kv().set('sslterm.cert-requests', [])
     clear_flag('endpoint.ssl-termination.update')
@@ -85,12 +88,12 @@ def get_certificate_requests():
         delete_old_certs(old_requests, cert_requests)
         unitdata.kv().set('sslterm.cert-requests', cert_requests)
         lets_encrypt.set_requested_certificates(cert_requests)
-        clean_nginx('/etc/nginx/sites-available/ssl-termination')
+        NginxConfig().delete_all_config(NginxModule.HTTP, 'ssl-termination')
         NginxConfig().delete_all_config(NginxModule.STREAM)
         set_flag('ssl-termination.waiting')
     elif not cert_requests:  # If no more cert_requests remove all configs
         unitdata.kv().set('sslterm.cert-requests', [])
-        clean_nginx('/etc/nginx/sites-available/ssl-termination')
+        NginxConfig().delete_all_config(NginxModule.HTTP, 'ssl-termination')
         NginxConfig().delete_all_config(NginxModule.STREAM)
         set_flag('ssl-termination.report')
 
@@ -110,20 +113,18 @@ def configure_nginx():
                 correct_fqdn = fqdn
         juju_unit_name = request['juju_unit'].split('/')[0]
         if 'upstreams' in request and request['upstreams']:
-            abs_file_path = '/etc/nginx/sites-available/ssl-termination/' + juju_unit_name
-            create_nginx_config(abs_file_path,
+            create_nginx_config(juju_unit_name,
                                 request['fqdn'],
                                 request['upstreams'],
-                                juju_unit_name,
                                 certs[correct_fqdn],
                                 request['credentials'],
-                                'htaccess_' + juju_unit_name)
+                                'htaccess_' + juju_unit_name,
+                                'ssl-termination')
         if 'tcp' in request and request['tcp']:
             if not create_tcp_nginx_config(request['tcp'],
                                            certs[correct_fqdn],
                                            juju_unit_name):
                 return
-    update_nginx()
     endpoint.send_status(list(certs.keys()))
     set_flag('ssl-termination.report')
 
@@ -137,8 +138,10 @@ def configure_nginx():
     'ssl-termination.installed',
     'lets-encrypt.registered',
     'reverseproxy.available')
-def set_up():
+@when_not('ssl-termination.http-setup')
+def http_set_up():
     if not config.get('fqdn'):
+        status.blocked("Found http relation, waiting for fqdn config.")
         return
     reverseproxy = endpoint_from_flag('reverseproxy.available')
     services = reverseproxy.services()
@@ -146,37 +149,38 @@ def set_up():
        not config.changed('credentials'):
         return
     print('New http relation found, configuring proxy.')
-    clean_nginx('/etc/nginx/sites-available/http')
+    NginxConfig().delete_all_config(NginxModule.HTTP, 'http')
     cert = lets_encrypt.live()
 
-    upstreams = []
-    for service in services:
-        upstreams.extend(service['hosts'])
+    # There is only support for 1 http service, block if there are more
+    if len(services) > 1:
+        status.blocked('More than 1 http relation found,' +
+        ' please remove one or use ssl-termination-fqdn subordinates.')
 
-    create_nginx_config("/etc/nginx/sites-available/http/http-config",
+    create_nginx_config(services[0]['service_name'],
                         [config.get("fqdn")],
-                        upstreams,
-                        "http-upstream",
+                        services[0]['hosts'],
                         cert,
                         config.get("credentials", ""),
-                        "htaccess_http")
-    update_nginx()
-    set_flag('ssl-termination-http.setup')
+                        'htaccess_http',
+                        'http')
+    set_flag('ssl-termination.http-setup')
     set_flag('ssl-termination.report')
 
 
 @when(
     'ssl-termination.installed',
-    'ssl-termination-http.setup'
+    'ssl-termination.http-setup'
 )
 @when_not(
     'reverseproxy.available'
 )
 def remove_http_setup():
     data_changed('sslterm.http', [])
-    clean_nginx('/etc/nginx/sites-available/http')
-    update_nginx()
-    clear_flag('ssl-termination-http.setup')
+    NginxConfig().delete_all_config(NginxModule.HTTP, 'http') \
+                 .validate_nginx() \
+                 .reload_nginx()
+    clear_flag('ssl-termination.http-setup')
     set_flag('ssl-termination.report')
 
 
@@ -214,7 +218,7 @@ def delete_old_certs(old_requests, new_requests):
                     os.remove('/etc/letsencrypt/renewal/' + fqdn + '.conf')
 
 
-def create_nginx_config(abs_path, fqdn, upstreams, upstream_name, cert, credentials, htaccess_name):
+def create_nginx_config(filename, fqdn, upstreams, cert, credentials, htaccess_name, subdir):
     # fqdn has to be a list
     credentials = credentials.split()
     # Did we get a valid value? If not, blocked!
@@ -223,17 +227,19 @@ def create_nginx_config(abs_path, fqdn, upstreams, upstream_name, cert, credenti
                        'I expect 2 space-separated string. I got {}.'.format(len(credentials)))
         return
     # We got a valid value, signal to regenerate config.
-    try:
+    #try:
+    #    os.remove('/etc/nginx/.' + htaccess_name)
+    #except OSError:
+    #    pass
+    if os.path.exists('/etc/nginx/.' + htaccess_name):
         os.remove('/etc/nginx/.' + htaccess_name)
-    except OSError:
-        pass
 
     nginx_context = {
         'privkey': cert['privkey'],
         'fullchain': cert['fullchain'],
         'fqdn': " ".join(fqdn),
         'upstreams': upstreams,
-        'upstream_name': upstream_name,
+        'upstream_name': filename, 
         'dhparam': cert['dhparam'],
         'auth_basic': bool(credentials),
     }
@@ -245,45 +251,18 @@ def create_nginx_config(abs_path, fqdn, upstreams, upstream_name, cert, credenti
             credentials[0], credentials[1]])
         nginx_context['htpasswd'] = '/etc/nginx/.' + htaccess_name
 
-    templating.render(source="encrypt.nginx.jinja2",
-                      target=abs_path,
+    cfg = templating.render(source="encrypt.nginx.jinja2",
+                      target=None,
                       context=nginx_context)
-    filename = abs_path.rstrip('/').split('/')[-1]
-    os.symlink(abs_path, "/etc/nginx/sites-enabled/" + filename)
-
-
-def clean_nginx(target):
-    files = []
-    for file in os.listdir(target):
-        files.append(file)
-    # Remove all symb links in /sites-enabled
-    for file in os.listdir('/etc/nginx/sites-enabled'):
-        if file in files:
-            os.unlink('/etc/nginx/sites-enabled/' + file)
-    # Remove all config files from /sites-available
-    for file in os.listdir(target):
-        os.remove(target.rstrip('/') + '/' + file)
-
-
-def update_nginx():
-    # Check if nginx config is valid
+    nginxcfg = NginxConfig()
     try:
-        cmd = run(['nginx', '-t'])
-        cmd.check_returncode()
-    except CalledProcessError as e:
+        nginxcfg.write_config(NginxModule.HTTP, cfg, filename, subdir=subdir)
+        nginxcfg.enable_all_config(NginxModule.HTTP, subdir=subdir) \
+                .validate_nginx() \
+                .reload_nginx()
+    except NginxConfigError as e:
         log(e)
-        status.blocked('Invalid NGINX configuration')
-        return False
-    # Reload NGINX
-    try:
-        cmd = run(['nginx', '-s', 'reload'])
-        cmd.check_returncode()
-    except CalledProcessError as e:
-        log(e)
-        status.blocked('Error reloading NGINX')
-        return False
-    return True
-
+        status.blocked('{}'.format(e))
 
 def create_tcp_nginx_config(tcp_request, cert, juju_unit):
     """
