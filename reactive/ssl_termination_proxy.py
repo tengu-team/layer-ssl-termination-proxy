@@ -80,7 +80,7 @@ def no_ssl_term_relations():
       'endpoint.ssl-termination.joined')
 @when_any('endpoint.ssl-termination.update')
 def get_certificate_requests():
-    endpoint = endpoint_from_flag('endpoint.ssl-termination.available')
+    endpoint = endpoint_from_flag('endpoint.ssl-termination.update')
     clear_flag('endpoint.ssl-termination.update')
     cert_requests = endpoint.get_cert_requests()
     if data_changed('sslterm.requests', cert_requests) and cert_requests:
