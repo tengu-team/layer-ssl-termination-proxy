@@ -60,7 +60,12 @@ def get_certificate_requests():
         unitdata.kv().set('sslterm.cert-requests', cert_requests)
         lets_encrypt.set_requested_certificates(cert_requests)
         set_flag('ssl-termination.waiting')
+    elif not cert_requests:
+        unitdata.kv().set('sslterm.cert-requests', [])
+        endpoint.send_status([])
     clean_nginx('/etc/nginx/sites-available/ssl-termination')
+    update_nginx()
+    status_set('active', 'Ready')
     
 
 
