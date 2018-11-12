@@ -58,6 +58,10 @@ def install_ssl_termination():
     ssl_term_path = os.path.join(nginxcfg.http_available_path, 'ssl-termination')
     os.makedirs(http_path, exist_ok=True)
     os.makedirs(ssl_term_path, exist_ok=True)
+
+    tcp_path = os.path.join(nginxcfg.streams_available_path, 'tcp')
+    os.makedirs(tcp_path, exist_ok=True)
+
     set_flag('ssl-termination.installed')
     status.blocked('Waiting for fqdn subordinates or http relation')
 
@@ -71,7 +75,8 @@ def install_ssl_termination():
 @when_not('endpoint.ssl-termination.joined')
 def no_ssl_term_relations():
     NginxConfig().delete_all_config(NginxModule.HTTP, 'ssl-termination')
-    NginxConfig().delete_all_config(NginxModule.STREAM)
+    NginxConfig().delete_all_config(NginxModule.STREAM, 'tcp')
+    NginxConfig().validate_nginx().reload_nginx()
     unitdata.kv().set('sslterm.cert-requests', [])
     clear_flag('endpoint.ssl-termination.update')
     set_flag('ssl-termination.report')
@@ -89,12 +94,13 @@ def get_certificate_requests():
         unitdata.kv().set('sslterm.cert-requests', cert_requests)
         lets_encrypt.set_requested_certificates(cert_requests)
         NginxConfig().delete_all_config(NginxModule.HTTP, 'ssl-termination')
-        NginxConfig().delete_all_config(NginxModule.STREAM)
+        NginxConfig().delete_all_config(NginxModule.STREAM, 'tcp')
         set_flag('ssl-termination.waiting')
     elif not cert_requests:  # If no more cert_requests remove all configs
         unitdata.kv().set('sslterm.cert-requests', [])
         NginxConfig().delete_all_config(NginxModule.HTTP, 'ssl-termination')
-        NginxConfig().delete_all_config(NginxModule.STREAM)
+        NginxConfig().delete_all_config(NginxModule.STREAM, 'tcp')
+        NginxConfig().validate_nginx().reload_nginx()
         set_flag('ssl-termination.report')
 
 
@@ -264,6 +270,7 @@ def create_nginx_config(filename, fqdn, upstreams, cert, credentials, htaccess_n
         log(e)
         status.blocked('{}'.format(e))
 
+
 def create_tcp_nginx_config(tcp_request, cert, juju_unit):
     """
     tcp_request: [{
@@ -287,8 +294,8 @@ def create_tcp_nginx_config(tcp_request, cert, juju_unit):
             tcp_config = templating.render(source='streams.nginx.jinja2',
                                         target=None,
                                         context=tcp_context)
-            nginxcfg.write_config(NginxModule.STREAM, tcp_config, name)
-        nginxcfg.enable_all_config(NginxModule.STREAM) \
+            nginxcfg.write_config(NginxModule.STREAM, tcp_config, name, subdir='tcp')
+        nginxcfg.enable_all_config(NginxModule.STREAM, subdir='tcp') \
                 .validate_nginx() \
                 .reload_nginx()
     except NginxConfigError as e:
