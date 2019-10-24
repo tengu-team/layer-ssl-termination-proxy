@@ -63,12 +63,12 @@ server {
 
         {% if auth_basic %}
         # Don't forward auth to backend service
-        proxy_set_header Authorization "";        
+        proxy_set_header Authorization "";
 
         limit_except OPTIONS {
             auth_basic "Restricted Content";
             auth_basic_user_file {{htpasswd}};
         }
-        {% endif %}        
+        {% endif %}
     }
 }
