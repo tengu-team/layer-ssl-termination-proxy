@@ -92,11 +92,21 @@ def get_certificate_requests():
         lets_encrypt.set_requested_certificates(pre_cert_requests)
         NginxConfig().delete_all_config(NginxModule.HTTP, 'ssl-termination')
         set_flag('ssl-termination.waiting')
+<<<<<<< HEAD
     elif not cert_requests:  # If no more cert_requests remove all configs
         unitdata.kv().set('sslterm.cert-requests', [])
         NginxConfig().delete_all_config(NginxModule.HTTP, 'ssl-termination')
         NginxConfig().validate_nginx().reload_nginx()
         set_flag('ssl-termination.report')
+=======
+    elif not cert_requests:
+        unitdata.kv().set('sslterm.cert-requests', [])
+        endpoint.send_status([])
+    clean_nginx('/etc/nginx/sites-available/ssl-termination')
+    update_nginx()
+    status_set('active', 'Ready')
+    
+>>>>>>> master
 
 
 @when('ssl-termination.waiting',
