@@ -55,14 +55,20 @@ server {
         proxy_set_header Upgrade $http_upgrade;                        # Websockets upgrade
         proxy_set_header Connection $connection_upgrade;               # Websockets upgrade
 
+{% if nginx_config %}
+    {%- for cfg in nginx_config %}
+        {{cfg}};
+    {%- endfor -%}
+{% endif %}
+
         {% if auth_basic %}
         # Don't forward auth to backend service
-        proxy_set_header Authorization "";
+        proxy_set_header Authorization "";        
 
         limit_except OPTIONS {
             auth_basic "Restricted Content";
             auth_basic_user_file {{htpasswd}};
         }
-        {% endif %}
+        {% endif %}        
     }
 }

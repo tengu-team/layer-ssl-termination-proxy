@@ -14,4 +14,4 @@ requires:
 provides:
   ssl-termination:
     interface: ssl-termination
-series: ['xenial']
+series: ['bionic', 'xenial']
