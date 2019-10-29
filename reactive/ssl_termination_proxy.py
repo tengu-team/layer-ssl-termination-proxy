@@ -26,6 +26,7 @@ from charms.reactive import (
     when,
     when_any,
     is_flag_set,
+    hook,
 )
 from charms.reactive.relations import endpoint_from_flag
 from charms.reactive.helpers import data_changed
@@ -59,7 +60,36 @@ def install_ssl_termination():
     os.makedirs(http_path, exist_ok=True)
     os.makedirs(ssl_term_path, exist_ok=True)
     set_flag('ssl-termination.installed')
-    status.blocked('Waiting for fqdn subordinates or http relation')
+    if not is_flag_set('endpoint.ssl-termination.joined'):
+        status.blocked('Waiting for fqdn subordinates or http relation')
+
+
+########################################################################
+# Upgrade-charm
+########################################################################
+
+@hook('upgrade-charm')
+def upgrade_charm():
+    status.maintenance('Upgrading charm..')
+    ssl_path = '/etc/nginx/sites-available/ssl-termination'
+    http_path = '/etc/nginx/sites-available/http'
+    symb_links = []
+    symb_links_ssl = [f for f in os.listdir(ssl_path) if os.path.isfile(os.path.join(ssl_path, f))]
+    symb_links_http = [f for f in os.listdir(http_path) if os.path.isfile(os.path.join(http_path, f))]
+    if symb_links_ssl:
+        symb_links.extend(symb_links_ssl)
+    if symb_links_http:
+        symb_links.extend(symb_links_http)
+    for symb_link in symb_links:
+        if os.path.exists('/etc/nginx/sites-enabled/' + symb_link):
+            os.remove('/etc/nginx/sites-enabled/' + symb_link)
+    rmtree('/etc/nginx/sites-available/ssl-termination')
+    rmtree('/etc/nginx/sites-available/http')
+    data_changed('sslterm.requests', {
+        'force_update_charm': True,
+    })
+    clear_flag('ssl-termination.installed')
+    set_flag('endpoint.ssl-termination.update')
 
 
 ########################################################################
